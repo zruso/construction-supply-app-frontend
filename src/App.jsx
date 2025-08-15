@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-/** =========================
- *  Config
- *  ========================= */
+/** Config */
 const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://construction-supply-app-backend.onrender.com";
@@ -18,12 +16,12 @@ const ICON = {
   edit: "\u270F\uFE0F",
   cancel: "\u274C",
   photo: "\uD83D\uDCF7",
-  escalate: "\uD83D\uDD3C"
+  escalate: "\uD83D\uDD3C",
+  complete: "\u2705",
+  restore: "\u21BA"
 };
 
-/** =========================
- *  Error Boundary
- *  ========================= */
+/** Error Boundary */
 class ErrorBoundary extends React.Component {
   constructor(props){ super(props); this.state = { hasError:false, err:null }; }
   static getDerivedStateFromError(error){ return { hasError:true, err:error }; }
@@ -46,11 +44,9 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/** =========================
- *  App
- *  ========================= */
+/** App */
 export default function App() {
-  // Hash route for invite accept (use hash so Vercel doesn't 404)
+  // Hash route for invite accept
   const [inviteToken, setInviteToken] = useState(readInviteFromHash());
   useEffect(() => {
     const onHash = () => setInviteToken(readInviteFromHash());
@@ -66,13 +62,14 @@ export default function App() {
   // Auth
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [role, setRole] = useState(() => localStorage.getItem("role") || "");
-  const [authChecked, setAuthChecked] = useState(false); // <<< baked-in auth gate
+  const [authChecked, setAuthChecked] = useState(false); // baked-in auth gate
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
-  const [loginRole, setLoginRole] = useState("worker"); // owner|manager|worker
+  const [loginRole, setLoginRole] = useState("worker");
   const [me, setMe] = useState(null);
 
   // Data
-  const [requests, setRequests] = useState([]);
+  const [requests, setRequests] = useState([]);       // active
+  const [history, setHistory] = useState([]);         // archived
   const [ownerInbox, setOwnerInbox] = useState([]);
 
   // Worker form
@@ -86,14 +83,15 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [newComplexName, setNewComplexName] = useState("");
 
-  // Owner invite form
+  // Invites
   const [ownerInvite, setOwnerInvite] = useState({ username: "", role: "manager", complex_id: "" });
-  // Supervisor invite
   const [superInvite, setSuperInvite] = useState({ username: "" });
   const [lastInviteLink, setLastInviteLink] = useState("");
 
-  // Owner tabs
-  const [ownerTab, setOwnerTab] = useState("inbox");
+  // Tabs
+  const [ownerTab, setOwnerTab] = useState("inbox");      // inbox | all | history | admin
+  const [managerTab, setManagerTab] = useState("active"); // active | history
+  const [workerTab, setWorkerTab] = useState("active");   // active | history
 
   // UI
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
@@ -105,7 +103,7 @@ export default function App() {
 
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // --- Baked-in auth checker: verifies token before showing any dashboard ---
+  // Auth verify
   const fetchMe = async (tkn = token) => {
     if (!tkn) { setAuthChecked(true); return; }
     try {
@@ -145,25 +143,25 @@ export default function App() {
   const logout = () => {
     setToken(""); setRole(""); setMe(null);
     localStorage.removeItem("token"); localStorage.removeItem("role");
-    setRequests([]); setOwnerInbox([]); setUsers([]); setComplexes([]);
-    setError(""); setOwnerTab("inbox");
-    setAuthChecked(true); // go back to login immediately
+    setRequests([]); setHistory([]); setOwnerInbox([]); setUsers([]); setComplexes([]);
+    setError(""); setOwnerTab("inbox"); setManagerTab("active"); setWorkerTab("active");
+    setAuthChecked(true);
   };
 
   const preload = async (tkn, r) => {
     await fetchMe(tkn);
     if (!tkn) return;
     if (r === "owner") {
-      await Promise.all([fetchOwnerInbox(tkn), fetchRequests(tkn), fetchComplexes(tkn), fetchUsers(tkn)]);
+      await Promise.all([fetchOwnerInbox(tkn), fetchActive(tkn), fetchHistory(tkn), fetchComplexes(tkn), fetchUsers(tkn)]);
     } else if (r === "manager") {
-      await Promise.all([fetchRequests(tkn), fetchComplexes(tkn), fetchUsers(tkn)]);
+      await Promise.all([fetchActive(tkn), fetchHistory(tkn), fetchComplexes(tkn), fetchUsers(tkn)]);
     } else {
-      await fetchRequests(tkn);
+      await Promise.all([fetchActive(tkn), fetchHistory(tkn)]);
     }
   };
 
-  const fetchRequests = async (tkn = token) => {
-    if (!tkn) return; setError("");
+  // --- Data loaders (active + history) ---
+  const fetchActive = async (tkn = token) => {
     try {
       const res = await fetch(`${API_URL}/requests`, { headers: { ...authHeaders, Authorization: `Bearer ${tkn}` }});
       const data = await res.json().catch(()=>[]);
@@ -171,9 +169,15 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `Failed to load requests (${res.status})`);
     } catch (e) { console.error(e); setError(e.message || "Failed to load requests"); setRequests([]); }
   };
-
+  const fetchHistory = async (tkn = token) => {
+    try {
+      const res = await fetch(`${API_URL}/requests/history`, { headers: { ...authHeaders, Authorization: `Bearer ${tkn}` }});
+      const data = await res.json().catch(()=>[]);
+      setHistory(Array.isArray(data) ? data : []);
+      if (!res.ok) throw new Error(data?.error || `Failed to load history (${res.status})`);
+    } catch (e) { console.error(e); setError(e.message || "Failed to load history"); setHistory([]); }
+  };
   const fetchOwnerInbox = async (tkn = token) => {
-    setError("");
     try {
       const res = await fetch(`${API_URL}/owner/requests?status=pending`, { headers: { ...authHeaders, Authorization:`Bearer ${tkn}` }});
       const data = await res.json().catch(()=>[]);
@@ -181,38 +185,28 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `Failed to load owner inbox (${res.status})`);
     } catch (e) { console.error(e); setError(e.message || "Failed to load owner inbox"); setOwnerInbox([]); }
   };
-
   const fetchComplexes = async (tkn = token) => {
-    setError("");
     try {
       const res = await fetch(`${API_URL}/complexes`, { headers: { ...authHeaders, Authorization:`Bearer ${tkn}` }});
       const data = await res.json().catch(()=>[]);
       const arr = Array.isArray(data) ? data : [];
       setComplexes(arr);
-      if (arr.length && !ownerInvite.complex_id) {
-        setOwnerInvite((v) => ({ ...v, complex_id: String(arr[0].id) }));
-      }
+      if (arr.length && !ownerInvite.complex_id) setOwnerInvite((v)=>({ ...v, complex_id:String(arr[0].id) }));
       if (!res.ok) throw new Error(data?.error || `Failed to load complexes (${res.status})`);
     } catch (e) { console.error(e); setError(e.message || "Failed to load complexes"); setComplexes([]); }
   };
-
   const fetchUsers = async (tkn = token) => {
-    setError("");
     try {
       const res = await fetch(`${API_URL}/users`, { headers: { ...authHeaders, Authorization:`Bearer ${tkn}` }});
-      const data = await res.json().catch(()=>[]);
+    const data = await res.json().catch(()=>[]);
       setUsers(Array.isArray(data) ? data : []);
       if (!res.ok) throw new Error(data?.error || `Failed to load users (${res.status})`);
     } catch (e) { console.error(e); setError(e.message || "Failed to load users"); setUsers([]); }
   };
 
-  useEffect(() => {
-    // On load and whenever token/role changes, verify auth and preload
-    (async () => { await preload(token, role); })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, role]);
+  useEffect(() => { (async ()=>{ await preload(token, role); })(); /* eslint-disable-next-line */ }, [token, role]);
 
-  /** -------- Employee actions -------- */
+  /** Employee actions */
   const createRequest = async () => {
     setError(""); setLoading(true);
     try {
@@ -222,7 +216,7 @@ export default function App() {
       });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Create failed (${res.status})`);
-      setItem(""); setQuantity(""); setProject(""); setNotes(""); await fetchRequests();
+      setItem(""); setQuantity(""); setProject(""); setNotes(""); await fetchActive();
     } catch (e) { setError(e.message || "Failed to create request"); }
     finally { setLoading(false); }
   };
@@ -242,7 +236,7 @@ export default function App() {
       });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Edit failed (${res.status})`);
-      setEditingId(null); await fetchRequests();
+      setEditingId(null); await fetchActive();
     } catch (e) { setError(e.message || "Failed to edit request"); }
     finally { setLoading(false); }
   };
@@ -254,12 +248,12 @@ export default function App() {
       const res = await fetch(`${API_URL}/requests/${id}/photo`, { method:"POST", headers:{ ...authHeaders }, body: fd });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Upload failed (${res.status})`);
-      await fetchRequests();
+      await fetchActive();
     } catch (e) { setError(e.message || "Failed to upload photo"); }
     finally { setLoading(false); }
   };
 
-  /** -------- Supervisor actions -------- */
+  /** Supervisor actions */
   const updateStatus = async (id, status) => {
     setError(""); setLoading(true);
     try {
@@ -268,7 +262,7 @@ export default function App() {
       });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Update failed (${res.status})`);
-      await fetchRequests();
+      await fetchActive();
     } catch (e) { setError(e.message || "Failed to update status"); }
     finally { setLoading(false); }
   };
@@ -278,12 +272,12 @@ export default function App() {
       const res = await fetch(`${API_URL}/requests/${id}/escalate`, { method:"PATCH", headers:{ ...authHeaders } });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Escalate failed (${res.status})`);
-      await fetchRequests();
+      await fetchActive();
     } catch (e) { setError(e.message || "Failed to escalate"); }
     finally { setLoading(false); }
   };
 
-  /** -------- Owner actions -------- */
+  /** Owner actions */
   const ownerDecision = async (id, decision) => {
     setError(""); setLoading(true);
     try {
@@ -292,114 +286,37 @@ export default function App() {
       });
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw new Error(data?.error || `Owner action failed (${res.status})`);
-      await Promise.all([fetchOwnerInbox(), fetchRequests()]);
+      await Promise.all([fetchOwnerInbox(), fetchActive()]);
     } catch (e) { setError(e.message || "Failed to record owner decision"); }
     finally { setLoading(false); }
   };
 
-  /** -------- Admin: complexes & invites -------- */
-  const createComplex = async () => {
-    const name = (newComplexName || "").trim();
-    if (!name) return;
+  /** NEW: Complete & Restore */
+  const completeRequest = async (id) => {
     setError(""); setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/complexes`, {
-        method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" }, body: JSON.stringify({ name })
-      });
+      const res = await fetch(`${API_URL}/requests/${id}/complete`, { method:"PATCH", headers:{ ...authHeaders }});
       const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Create complex failed (${res.status})`);
-      setNewComplexName(""); await fetchComplexes();
-    } catch (e) { setError(e.message || "Failed to create complex"); }
+      if (!res.ok) throw new Error(data?.error || `Complete failed (${res.status})`);
+      await Promise.all([fetchActive(), fetchHistory()]);
+    } catch (e) { setError(e.message || "Failed to complete request"); }
     finally { setLoading(false); }
   };
-
-  const ownerInviteUser = async () => {
-    const u = (ownerInvite.username || "").trim();
-    if (!u) return; if (!ownerInvite.role) return;
-    if (!ownerInvite.complex_id) { setError("Pick a complex"); return; }
+  const restoreRequest = async (id) => {
     setError(""); setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/invites`, {
-        method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" },
-        body: JSON.stringify({
-          username: u,
-          role: ownerInvite.role,                // "manager" or "worker"
-          complex_id: Number(ownerInvite.complex_id)
-        })
-      });
+      const res = await fetch(`${API_URL}/requests/${id}/restore`, { method:"PATCH", headers:{ ...authHeaders }});
       const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Invite failed (${res.status})`);
-      setOwnerInvite({ username:"", role:"manager", complex_id: complexes[0] ? String(complexes[0].id) : "" });
-      const link = buildInviteLink(data.invite_token);
-      setLastInviteLink(link); await fetchUsers();
-    } catch (e) { setError(e.message || "Failed to create invite"); }
-    finally { setLoading(false); }
-  };
-
-  const supervisorInviteEmployee = async () => {
-    const u = (superInvite.username || "").trim(); if (!u) return;
-    setError(""); setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/invites`, {
-        method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" },
-        body: JSON.stringify({ username: u })
-      });
-      const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Invite failed (${res.status})`);
-      setSuperInvite({ username:"" });
-      const link = buildInviteLink(data.invite_token);
-      setLastInviteLink(link); await fetchUsers();
-    } catch (e) { setError(e.message || "Failed to create invite"); }
-    finally { setLoading(false); }
-  };
-
-  /** -------- Admin: manage accounts -------- */
-  const resetPasswordFor = async (u) => {
-    const npw = window.prompt(`Enter a new password for ${u.username}:`);
-    if (!npw) return; setError(""); setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/users/${u.id}/password`, {
-        method:"PATCH", headers:{ ...authHeaders, "Content-Type":"application/json" },
-        body: JSON.stringify({ new_password: npw })
-      });
-      const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Reset failed (${res.status})`);
-      await fetchUsers();
-    } catch (e) { setError(e.message || "Failed to reset password"); }
-    finally { setLoading(false); }
-  };
-
-  const toggleActiveFor = async (u) => {
-    setError(""); setLoading(true);
-    try {
-      const ep = u.active ? "disable" : "enable";
-      const res = await fetch(`${API_URL}/users/${u.id}/${ep}`, { method:"PATCH", headers:{ ...authHeaders } });
-      const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Update failed (${res.status})`);
-      await fetchUsers();
-    } catch (e) { setError(e.message || "Failed to update account status"); }
-    finally { setLoading(false); }
-  };
-
-  const deleteUser = async (u) => {
-    if (!window.confirm(`Delete ${u.username}? This cannot be undone.`)) return;
-    setError(""); setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/users/${u.id}`, { method:"DELETE", headers:{ ...authHeaders } });
-      const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data?.error || `Delete failed (${res.status})`);
-      await fetchUsers();
-    } catch (e) { setError(e.message || "Failed to delete user"); }
+      if (!res.ok) throw new Error(data?.error || `Restore failed (${res.status})`);
+      await Promise.all([fetchActive(), fetchHistory()]);
+    } catch (e) { setError(e.message || "Failed to restore request"); }
     finally { setLoading(false); }
   };
 
   /** ---------- Views ---------- */
-
-  // Show a neutral loading screen until we verify any stored token
   if (!authChecked) {
     return <div style={{ padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>Loading…</div>;
   }
-
   if (!token) {
     return (
       <ErrorBoundary>
@@ -445,12 +362,18 @@ export default function App() {
               <div style={rowBetween}>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                   <button style={tab(ownerTab==="inbox")} onClick={()=>{ setOwnerTab("inbox"); fetchOwnerInbox(); }}>Inbox</button>
-                  <button style={tab(ownerTab==="all")} onClick={()=>{ setOwnerTab("all"); fetchRequests(); }}>All Requests</button>
+                  <button style={tab(ownerTab==="all")} onClick={()=>{ setOwnerTab("all"); fetchActive(); }}>All Requests</button>
+                  <button style={tab(ownerTab==="history")} onClick={()=>{ setOwnerTab("history"); fetchHistory(); }}>History</button>
                   <button style={tab(ownerTab==="admin")} onClick={()=>{ setOwnerTab("admin"); fetchComplexes(); fetchUsers(); }}>Admin</button>
                 </div>
                 <button
                   style={btnSmall}
-                  onClick={()=>{ if (ownerTab==="inbox") fetchOwnerInbox(); if (ownerTab==="all") fetchRequests(); if (ownerTab==="admin") { fetchComplexes(); fetchUsers(); } }}
+                  onClick={()=>{ 
+                    if (ownerTab==="inbox") fetchOwnerInbox();
+                    if (ownerTab==="all") fetchActive();
+                    if (ownerTab==="history") fetchHistory();
+                    if (ownerTab==="admin") { fetchComplexes(); fetchUsers(); }
+                  }}
                   disabled={loading}
                 >
                   {loading ? "Loading..." : "Refresh"}
@@ -463,13 +386,35 @@ export default function App() {
                 <h3>Owner Approval Inbox (Escalated)</h3>
                 {(!Array.isArray(ownerInbox) || ownerInbox.length===0) && <div style={{ color:"#666" }}>No escalated requests.</div>}
                 {Array.isArray(ownerInbox) && ownerInbox.map((r)=>(
-                  <RequestRow key={r.id} r={r} role="owner" onOwnerDecision={ownerDecision} />
+                  <RequestRow key={r.id} r={r} role="owner" onOwnerDecision={ownerDecision} onComplete={completeRequest} />
                 ))}
               </Card>
             )}
 
             {ownerTab === "all" && (
-              <RequestList title="All Requests" role="owner" requests={requests} onRefresh={fetchRequests} />
+              <RequestList
+                title="All Requests (Active)"
+                role="owner"
+                requests={requests}
+                isHistory={false}
+                onRefresh={fetchActive}
+                onUpdateStatus={()=>{}}
+                onEscalate={()=>{}}
+                onComplete={completeRequest}
+                onRestore={restoreRequest}
+              />
+            )}
+
+            {ownerTab === "history" && (
+              <RequestList
+                title="History (Completed)"
+                role="owner"
+                requests={history}
+                isHistory={true}
+                onRefresh={fetchHistory}
+                onComplete={()=>{}}
+                onRestore={restoreRequest}
+              />
             )}
 
             {ownerTab === "admin" && (
@@ -529,6 +474,41 @@ export default function App() {
         {role === "manager" && (
           <>
             <Card>
+              <div style={rowBetween}>
+                <h3>Supervisor — Requests</h3>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button style={tab(managerTab==="active")} onClick={()=>{ setManagerTab("active"); fetchActive(); }}>Active</button>
+                  <button style={tab(managerTab==="history")} onClick={()=>{ setManagerTab("history"); fetchHistory(); }}>History</button>
+                </div>
+              </div>
+            </Card>
+
+            {managerTab === "active" && (
+              <RequestList
+                title="Complex Requests (Active)"
+                role="manager"
+                requests={requests}
+                isHistory={false}
+                onRefresh={fetchActive}
+                onUpdateStatus={updateStatus}
+                onEscalate={escalateToOwner}
+                onComplete={completeRequest}
+                onRestore={restoreRequest}
+              />
+            )}
+            {managerTab === "history" && (
+              <RequestList
+                title="Complex Requests — History"
+                role="manager"
+                requests={history}
+                isHistory={true}
+                onRefresh={fetchHistory}
+                onComplete={()=>{}}
+                onRestore={restoreRequest}
+              />
+            )}
+
+            <Card>
               <h3>Supervisor Admin — Invite Employee</h3>
               <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8, marginBottom:6 }}>
                 <input style={input} placeholder="Employee username" value={superInvite.username} onChange={e=>setSuperInvite({ username:e.target.value })} />
@@ -540,8 +520,8 @@ export default function App() {
                   <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
                 </div>
               )}
-              <button style={btnSmall} onClick={()=>{ fetchUsers(); fetchRequests(); }} disabled={loading}>
-                {loading ? "Refreshing..." : "Refresh Lists"}
+              <button style={btnSmall} onClick={()=>{ fetchUsers(); }} disabled={loading}>
+                {loading ? "Refreshing..." : "Refresh People List"}
               </button>
 
               <div style={{ marginTop:12 }}>
@@ -555,15 +535,6 @@ export default function App() {
                 />
               </div>
             </Card>
-
-            <RequestList
-              title="Complex Requests"
-              role="manager"
-              requests={requests}
-              onRefresh={fetchRequests}
-              onUpdateStatus={updateStatus}
-              onEscalate={escalateToOwner}
-            />
           </>
         )}
 
@@ -571,30 +542,57 @@ export default function App() {
         {role === "worker" && (
           <>
             <Card>
-              <h3>New Supply Request</h3>
-              <div style={grid}>
-                <input style={input} placeholder="Item" value={item} onChange={e=>setItem(e.target.value)} />
-                <input style={input} type="number" placeholder="Quantity" value={quantity} onChange={e=>setQuantity(e.target.value)} />
-                <input style={input} placeholder="Project" value={project} onChange={e=>setProject(e.target.value)} />
-                <input style={input} placeholder="Notes (optional)" value={notes} onChange={e=>setNotes(e.target.value)} />
-                <button style={btn} onClick={createRequest} disabled={loading}>{loading ? "Submitting..." : "Submit"}</button>
+              <div style={rowBetween}>
+                <h3>Employee — Requests</h3>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button style={tab(workerTab==="active")} onClick={()=>{ setWorkerTab("active"); fetchActive(); }}>Active</button>
+                  <button style={tab(workerTab==="history")} onClick={()=>{ setWorkerTab("history"); fetchHistory(); }}>History</button>
+                </div>
               </div>
             </Card>
 
-            <RequestList
-              title="My Requests"
-              role="worker"
-              requests={requests}
-              onRefresh={fetchRequests}
-              onUpdateStatus={updateStatus}
-              onStartEdit={(r)=>{ setEditingId(r.id); setEditForm({ item:r.item||"", quantity:String(r.quantity??""), project:r.project||"", notes:r.notes||"" }); }}
-              onCancelEdit={()=>{ setEditingId(null); setEditForm({ item:"", quantity:"", project:"", notes:"" }); }}
-              onSaveEdit={saveEdit}
-              editingId={editingId}
-              editForm={editForm}
-              setEditForm={setEditForm}
-              onUploadPhoto={uploadPhoto}
-            />
+            {workerTab === "active" && (
+              <>
+                <Card>
+                  <h3>New Supply Request</h3>
+                  <div style={grid}>
+                    <input style={input} placeholder="Item" value={item} onChange={e=>setItem(e.target.value)} />
+                    <input style={input} type="number" placeholder="Quantity" value={quantity} onChange={e=>setQuantity(e.target.value)} />
+                    <input style={input} placeholder="Project" value={project} onChange={e=>setProject(e.target.value)} />
+                    <input style={input} placeholder="Notes (optional)" value={notes} onChange={e=>setNotes(e.target.value)} />
+                    <button style={btn} onClick={createRequest} disabled={loading}>{loading ? "Submitting..." : "Submit"}</button>
+                  </div>
+                </Card>
+
+                <RequestList
+                  title="My Requests (Active)"
+                  role="worker"
+                  requests={requests}
+                  isHistory={false}
+                  onRefresh={fetchActive}
+                  onUpdateStatus={updateStatus}
+                  onStartEdit={(r)=>{ setEditingId(r.id); setEditForm({ item:r.item||"", quantity:String(r.quantity??""), project:r.project||"", notes:r.notes||"" }); }}
+                  onCancelEdit={()=>{ setEditingId(null); setEditForm({ item:"", quantity:"", project:"", notes:"" }); }}
+                  onSaveEdit={saveEdit}
+                  editingId={editingId}
+                  editForm={editForm}
+                  setEditForm={setEditForm}
+                  onUploadPhoto={uploadPhoto}
+                  onComplete={completeRequest}
+                />
+              </>
+            )}
+
+            {workerTab === "history" && (
+              <RequestList
+                title="My Requests — History"
+                role="worker"
+                requests={history}
+                isHistory={true}
+                onRefresh={fetchHistory}
+                onRestore={restoreRequest}
+              />
+            )}
           </>
         )}
       </div>
@@ -602,9 +600,7 @@ export default function App() {
   );
 }
 
-/** =========================
- *  Accept Invite
- *  ========================= */
+/** Accept Invite */
 function AcceptInvite({ token }) {
   const [valid, setValid] = useState(null);
   const [username, setUsername] = useState("");
@@ -658,12 +654,12 @@ function AcceptInvite({ token }) {
   );
 }
 
-/** =========================
- *  Reusable Components
- *  ========================= */
-function RequestList({ title, role, requests, onRefresh, onUpdateStatus, onEscalate,
-  onStartEdit, onCancelEdit, onSaveEdit, editingId, editForm, setEditForm, onUploadPhoto }) {
-
+/** Reusable Components */
+function RequestList({
+  title, role, requests, isHistory=false,
+  onRefresh, onUpdateStatus, onEscalate, onStartEdit, onCancelEdit, onSaveEdit,
+  editingId, editForm, setEditForm, onUploadPhoto, onComplete, onRestore
+}) {
   const list = Array.isArray(requests) ? requests : [];
   return (
     <Card>
@@ -672,7 +668,7 @@ function RequestList({ title, role, requests, onRefresh, onUpdateStatus, onEscal
         <button style={btnSmall} onClick={()=>onRefresh()}>Refresh</button>
       </div>
 
-      {list.length === 0 && <div style={{ color:"#666" }}>No requests yet.</div>}
+      {list.length === 0 && <div style={{ color:"#666" }}>{isHistory ? "No completed items yet." : "No requests yet."}</div>}
 
       {list.map((r) => {
         const pending = r.status === "pending";
@@ -683,6 +679,7 @@ function RequestList({ title, role, requests, onRefresh, onUpdateStatus, onEscal
               <div style={{ marginTop:4 }}>
                 <StatusBadge status={r.status} />
                 <OwnerBadge ownerStatus={r.owner_status} />
+                {r.completed_at && <span style={{ marginLeft:8, fontSize:12, color:"#374151" }}>Completed: {new Date(r.completed_at).toLocaleString()}</span>}
                 {r.photo_url && (
                   <a href={`${API_URL}${r.photo_url}`} target="_blank" rel="noreferrer" style={{ marginLeft:10 }}>
                     {ICON.photo} View Photo
@@ -692,48 +689,62 @@ function RequestList({ title, role, requests, onRefresh, onUpdateStatus, onEscal
               {r.notes && <div style={{ color:"#555", marginTop:4 }}>Notes: {r.notes}</div>}
             </div>
 
-            {role === "manager" && (
+            {/* Buttons */}
+            {!isHistory && (
               <div style={btnGroup}>
-                {r.owner_status === "none" && pending && (
-                  <button style={btnTiny} onClick={()=>onEscalate(r.id)}>{ICON.escalate} Escalate</button>
+                {role === "manager" && (
+                  <>
+                    {r.owner_status === "none" && pending && (
+                      <button style={btnTiny} onClick={()=>onEscalate?.(r.id)}>{ICON.escalate} Escalate</button>
+                    )}
+                    <button style={btnTiny} onClick={()=>onUpdateStatus?.(r.id,"approved")}>{ICON.approve} Approve</button>
+                    <button style={btnTiny} onClick={()=>onUpdateStatus?.(r.id,"ordered")}>{ICON.ordered} Ordered</button>
+                    <button style={btnTiny} onClick={()=>onUpdateStatus?.(r.id,"delivered")}>{ICON.delivered} Delivered</button>
+                    <button style={btnTinyDanger} onClick={()=>onUpdateStatus?.(r.id,"rejected")}>{ICON.reject} Reject</button>
+                  </>
                 )}
-                <button style={btnTiny} onClick={()=>onUpdateStatus(r.id,"approved")}>{ICON.approve} Approve</button>
-                <button style={btnTiny} onClick={()=>onUpdateStatus(r.id,"ordered")}>{ICON.ordered} Ordered</button>
-                <button style={btnTiny} onClick={()=>onUpdateStatus(r.id,"delivered")}>{ICON.delivered} Delivered</button>
-                <button style={btnTinyDanger} onClick={()=>onUpdateStatus(r.id,"rejected")}>{ICON.reject} Reject</button>
+
+                {role === "worker" && pending && (
+                  <>
+                    {editingId === r.id ? (
+                      <>
+                        <button style={btnTiny} onClick={()=>onSaveEdit?.(r.id)}>{ICON.edit} Save</button>
+                        <button style={btnTinyDanger} onClick={onCancelEdit}>{ICON.cancel} Cancel Edit</button>
+                      </>
+                    ) : (
+                      <>
+                        <button style={btnTiny} onClick={()=>onStartEdit?.(r)}>{ICON.edit} Edit</button>
+                        <button
+                          style={btnTinyDanger}
+                          onClick={()=> window.confirm("Cancel this request?") && onUpdateStatus?.(r.id,"canceled")}
+                        >
+                          {ICON.cancel} Cancel
+                        </button>
+                        <label style={{ ...btnTiny, display:"inline-block", cursor:"pointer" }}>
+                          {ICON.photo} Upload
+                          <input type="file" accept="image/*" style={{ display:"none" }}
+                                 onChange={(e)=>onUploadPhoto?.(r.id, e.target.files?.[0])}/>
+                        </label>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {/* Complete for EVERY role */}
+                <button style={btnTiny} onClick={()=>onComplete?.(r.id)}>{ICON.complete} Complete</button>
               </div>
             )}
 
-            {role === "worker" && pending && (
+            {isHistory && (
               <div style={btnGroup}>
-                {editingId === r.id ? (
-                  <>
-                    <button style={btnTiny} onClick={()=>onSaveEdit(r.id)}>{ICON.edit} Save</button>
-                    <button style={btnTinyDanger} onClick={onCancelEdit}>{ICON.cancel} Cancel Edit</button>
-                  </>
-                ) : (
-                  <>
-                    <button style={btnTiny} onClick={()=>onStartEdit(r)}>{ICON.edit} Edit</button>
-                    <button
-                      style={btnTinyDanger}
-                      onClick={()=> window.confirm("Cancel this request?") && onUpdateStatus(r.id,"canceled")}
-                    >
-                      {ICON.cancel} Cancel
-                    </button>
-                    <label style={{ ...btnTiny, display:"inline-block", cursor:"pointer" }}>
-                      {ICON.photo} Upload
-                      <input type="file" accept="image/*" style={{ display:"none" }}
-                             onChange={(e)=>onUploadPhoto(r.id, e.target.files?.[0])}/>
-                    </label>
-                  </>
-                )}
+                <button style={btnTiny} onClick={()=>onRestore?.(r.id)}>{ICON.restore} Restore</button>
               </div>
             )}
           </div>
         );
       })}
 
-      {editingId && role === "worker" && (
+      {editingId && !isHistory && role === "worker" && (
         <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed #e5e7eb" }}>
           <h4>Edit Request</h4>
           <div style={grid}>
@@ -748,7 +759,7 @@ function RequestList({ title, role, requests, onRefresh, onUpdateStatus, onEscal
   );
 }
 
-function RequestRow({ r, role, onOwnerDecision }) {
+function RequestRow({ r, role, onOwnerDecision, onComplete }) {
   return (
     <div style={reqRow}>
       <div style={{ flex:1 }}>
@@ -768,6 +779,7 @@ function RequestRow({ r, role, onOwnerDecision }) {
         <div style={btnGroup}>
           <button style={btnTiny} onClick={()=>onOwnerDecision(r.id,"approved")}>{ICON.approve} Approve</button>
           <button style={btnTinyDanger} onClick={()=>onOwnerDecision(r.id,"rejected")}>{ICON.reject} Reject</button>
+          <button style={btnTiny} onClick={()=>onComplete?.(r.id)}>{ICON.complete} Complete</button>
         </div>
       )}
     </div>
@@ -816,9 +828,7 @@ function UserTable({ users, canManage, onReset, onToggle, onDelete }) {
   );
 }
 
-/** =========================
- *  Badges & Styles
- *  ========================= */
+/** Badges & Styles */
 function StatusBadge({ status }) {
   const s = String(status || "").toLowerCase();
   const map = {
@@ -844,9 +854,7 @@ function OwnerBadge({ ownerStatus }) {
   return <span style={{ background:c.bg, color:c.fg, padding:"2px 8px", borderRadius:999, fontSize:12, marginLeft:8 }}>{c.label}</span>;
 }
 
-/** =========================
- *  Utils & Styles
- *  ========================= */
+/** Utils & Styles */
 function buildInviteLink(inviteToken) {
   return `${window.location.origin}/#accept-invite=${encodeURIComponent(inviteToken)}`;
 }
