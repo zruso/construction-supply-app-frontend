@@ -623,70 +623,138 @@ export default function App() {
   );
 
   /** ----- Owner Admin panel (same as before) ----- */
-  function OwnerAdmin(props) {
-    const {
-      newComplexName, setNewComplexName, createComplex, complexes,
-      ownerInvite, setOwnerInvite, lastInviteLink, setLastInviteLink,
-      fetchComplexes, fetchUsers, ownerInviteUser, users,
-      resetPasswordFor, toggleActiveFor, deleteUser, loading
-    } = props;
+function OwnerAdmin(props) {
+  const {
+    newComplexName, setNewComplexName, createComplex, complexes,
+    ownerInvite, setOwnerInvite, lastInviteLink, setLastInviteLink,
+    fetchComplexes, fetchUsers, ownerInviteUser, users,
+    resetPasswordFor, toggleActiveFor, deleteUser, loading
+  } = props;
 
-    return (
-      <Card>
-        <h3>Owner Admin</h3>
+  // Ultra‑defensive render guards to avoid undefined symbols in minified builds
+  const safeComplexes = Array.isArray(complexes) ? complexes : [];
+  const safeUsers = Array.isArray(users) ? users : [];
 
-        <section style={{ marginBottom:16 }}>
-          <h4>Create Complex</h4>
-          <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
-            <input style={input} placeholder="Complex name" value={newComplexName} onChange={e=>setNewComplexName(e.target.value)} />
-            <button style={btnSmall} onClick={createComplex}>Add Complex</button>
-          </div>
-        </section>
+  return (
+    <Card>
+      <h3>Owner Admin</h3>
 
-        <section style={{ marginBottom:16 }}>
-          <h4>Invite Supervisor / Employee</h4>
-          <div style={gridAdmin}>
-            <input style={input} placeholder="Username" value={ownerInvite.username} onChange={e=>setOwnerInvite(v=>({ ...v, username:e.target.value }))} />
-            <select style={input} value={ownerInvite.role} onChange={e=>setOwnerInvite(v=>({ ...v, role:e.target.value }))}>
-              <option value="manager">Supervisor</option>
-              <option value="worker">Employee</option>
-            </select>
-            <select
-              style={input}
-              value={ownerInvite.complex_id}
-              onChange={e=>setOwnerInvite(v=>({ ...v, complex_id:e.target.value }))}
-              disabled={!Array.isArray(complexes) || complexes.length===0}
-            >
-              {Array.isArray(complexes) && complexes.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-            </select>
-            <button style={btnSmall} onClick={ownerInviteUser} disabled={!Array.isArray(complexes) || complexes.length===0}>Create Invite</button>
-          </div>
-          {lastInviteLink && (
-            <div style={{ marginTop:8 }}>
-              <b>Invite link:</b> <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
-              <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h4>All Users</h4>
-          <UserTable
-            users={users}
-            canManage={(u)=>u && u.role !== "owner"}
-            onReset={resetPasswordFor}
-            onToggle={toggleActiveFor}
-            onDelete={deleteUser}
+      {/* Create Complex */}
+      <section style={{ marginBottom:16 }}>
+        <h4>Create Complex</h4>
+        <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
+          <input
+            style={input}
+            placeholder="Complex name"
+            value={newComplexName || ""}
+            onChange={e=>setNewComplexName(e.target.value)}
           />
+          <button style={btnSmall} onClick={createComplex}>Add Complex</button>
+        </div>
+      </section>
+
+      {/* Invite */}
+      <section style={{ marginBottom:16 }}>
+        <h4>Invite Supervisor / Employee</h4>
+        <div style={gridAdmin}>
+          <input
+            style={input}
+            placeholder="Username"
+            value={ownerInvite?.username || ""}
+            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), username:e.target.value }))}
+          />
+          <select
+            style={input}
+            value={ownerInvite?.role || "manager"}
+            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), role:e.target.value }))}
+          >
+            <option value="manager">Supervisor</option>
+            <option value="worker">Employee</option>
+          </select>
+          <select
+            style={input}
+            value={String(ownerInvite?.complex_id || "")}
+            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), complex_id:e.target.value }))}
+            disabled={safeComplexes.length===0}
+          >
+            {safeComplexes.map(c => (
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            ))}
+          </select>
+          <button
+            style={btnSmall}
+            onClick={ownerInviteUser}
+            disabled={safeComplexes.length===0}
+          >
+            Create Invite
+          </button>
+        </div>
+
+        {lastInviteLink ? (
           <div style={{ marginTop:8 }}>
-            <button style={btnSmall} onClick={()=>{ fetchComplexes(); fetchUsers(); }} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh Lists"}
-            </button>
+            <b>Invite link:</b>{" "}
+            <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
+            <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
           </div>
-        </section>
-      </Card>
-    );
-  }
+        ) : null}
+      </section>
+
+      {/* Users */}
+      <section>
+        <h4>All Users</h4>
+
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>ID</th>
+                <th style={th}>Username</th>
+                <th style={th}>Role</th>
+                <th style={th}>Complex</th>
+                <th style={th}>Active</th>
+                <th style={th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {safeUsers.map(u => (
+                <tr key={u.id}>
+                  <td style={td}>{u.id}</td>
+                  <td style={td}>{u.username}</td>
+                  <td style={td}>{ROLE_LABEL[u.role] || u.role}</td>
+                  <td style={td}>{u.complex_id ?? "—"}</td>
+                  <td style={td}>{u.active ? "Yes" : "No"}</td>
+                  <td style={{ ...td, whiteSpace:"nowrap" }}>
+                    {u.role !== "owner" ? (
+                      <>
+                        <button style={btnTiny} onClick={()=>resetPasswordFor(u)}>Reset PW</button>
+                        <button style={btnTiny} onClick={()=>toggleActiveFor(u)}>{u.active ? "Disable" : "Enable"}</button>
+                        <button style={btnTinyDanger} onClick={()=>deleteUser(u)}>Delete</button>
+                      </>
+                    ) : <span style={{ color:"#6b7280" }}>—</span>}
+                  </td>
+                </tr>
+              ))}
+              {safeUsers.length === 0 && (
+                <tr><td style={td} colSpan="6">No users yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop:8, display:"flex", gap:8 }}>
+          <button
+            style={btnSmall}
+            onClick={()=>{ fetchComplexes(); fetchUsers(); }}
+            disabled={loading}
+          >
+            {loading ? "Refreshing..." : "Refresh Lists"}
+          </button>
+        </div>
+      </section>
+    </Card>
+  );
+}
+
 
   function SupervisorAdmin(props) {
     const {
