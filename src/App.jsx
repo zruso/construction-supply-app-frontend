@@ -860,3 +860,5 @@ const reqRow = { display:"flex", alignItems:"center", justifyContent:"space-betw
 const errBanner = { margin:"8px 0", background:"#FEF2F2", color:"#991B1B", border:"1px solid #FECACA", padding:"8px 10px", borderRadius:8 };
 const roleChip = (active) => ({ padding:"6px 10px", borderRadius:999, border:active?"2px solid #0d6efd":"1px solid #cbd5e1", background:active?"#eff6ff":"#fff", cursor:"pointer", userSelect:"none" });
 const tab = (active) => ({ ...btnSmall, background: active ? "#0d6efd" : "#e5e7eb", color: active ? "#fff" : "#111827" });
+const th = { textAlign: "left", padding: "8px", borderBottom: "1px solid #e5e7eb", fontWeight: 600, fontSize: 14 };
+const td = { padding: "8px", borderBottom: "1px solid #f1f5f9", fontSize: 14 };
