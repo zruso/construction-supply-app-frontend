@@ -1,5 +1,3 @@
-/* FULL App.jsx with StatusBadge & OwnerBadge defined */
-
 import React, { useEffect, useState } from "react";
 
 /** Config */
@@ -47,7 +45,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/** Badges that were missing before */
+/** Badges (previously missing) */
 function StatusBadge({ status }) {
   const s = String(status || "").toLowerCase();
   const map = {
@@ -64,7 +62,6 @@ function StatusBadge({ status }) {
     fontSize:12, marginRight:6
   }}>{sty.label}</span>;
 }
-
 function OwnerBadge({ ownerStatus }) {
   const s = String(ownerStatus || "").toLowerCase();
   const map = {
@@ -98,7 +95,7 @@ export default function App() {
   // Auth
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [role, setRole] = useState(() => localStorage.getItem("role") || "");
-  const [authChecked, setAuthChecked] = useState(false); // baked-in auth gate
+  const [authChecked, setAuthChecked] = useState(false);
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
   const [loginRole, setLoginRole] = useState("worker");
   const [me, setMe] = useState(null);
@@ -622,139 +619,133 @@ export default function App() {
     </ErrorBoundary>
   );
 
-  /** ----- Owner Admin panel (same as before) ----- */
-function OwnerAdmin(props) {
-  const {
-    newComplexName, setNewComplexName, createComplex, complexes,
-    ownerInvite, setOwnerInvite, lastInviteLink, setLastInviteLink,
-    fetchComplexes, fetchUsers, ownerInviteUser, users,
-    resetPasswordFor, toggleActiveFor, deleteUser, loading
-  } = props;
+  /** ----- Owner Admin (hardened) ----- */
+  function OwnerAdmin(props) {
+    const {
+      newComplexName, setNewComplexName, createComplex, complexes,
+      ownerInvite, setOwnerInvite, lastInviteLink, setLastInviteLink,
+      fetchComplexes, fetchUsers, ownerInviteUser, users,
+      resetPasswordFor, toggleActiveFor, deleteUser, loading
+    } = props;
 
-  // Ultra‑defensive render guards to avoid undefined symbols in minified builds
-  const safeComplexes = Array.isArray(complexes) ? complexes : [];
-  const safeUsers = Array.isArray(users) ? users : [];
+    const safeComplexes = Array.isArray(complexes) ? complexes : [];
+    const safeUsers = Array.isArray(users) ? users : [];
 
-  return (
-    <Card>
-      <h3>Owner Admin</h3>
+    return (
+      <Card>
+        <h3>Owner Admin</h3>
 
-      {/* Create Complex */}
-      <section style={{ marginBottom:16 }}>
-        <h4>Create Complex</h4>
-        <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
-          <input
-            style={input}
-            placeholder="Complex name"
-            value={newComplexName || ""}
-            onChange={e=>setNewComplexName(e.target.value)}
-          />
-          <button style={btnSmall} onClick={createComplex}>Add Complex</button>
-        </div>
-      </section>
-
-      {/* Invite */}
-      <section style={{ marginBottom:16 }}>
-        <h4>Invite Supervisor / Employee</h4>
-        <div style={gridAdmin}>
-          <input
-            style={input}
-            placeholder="Username"
-            value={ownerInvite?.username || ""}
-            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), username:e.target.value }))}
-          />
-          <select
-            style={input}
-            value={ownerInvite?.role || "manager"}
-            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), role:e.target.value }))}
-          >
-            <option value="manager">Supervisor</option>
-            <option value="worker">Employee</option>
-          </select>
-          <select
-            style={input}
-            value={String(ownerInvite?.complex_id || "")}
-            onChange={e=>setOwnerInvite(v=>({ ...(v||{}), complex_id:e.target.value }))}
-            disabled={safeComplexes.length===0}
-          >
-            {safeComplexes.map(c => (
-              <option key={c.id} value={String(c.id)}>{c.name}</option>
-            ))}
-          </select>
-          <button
-            style={btnSmall}
-            onClick={ownerInviteUser}
-            disabled={safeComplexes.length===0}
-          >
-            Create Invite
-          </button>
-        </div>
-
-        {lastInviteLink ? (
-          <div style={{ marginTop:8 }}>
-            <b>Invite link:</b>{" "}
-            <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
-            <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
+        <section style={{ marginBottom:16 }}>
+          <h4>Create Complex</h4>
+          <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
+            <input
+              style={input}
+              placeholder="Complex name"
+              value={newComplexName || ""}
+              onChange={e=>setNewComplexName(e.target.value)}
+            />
+            <button style={btnSmall} onClick={createComplex}>Add Complex</button>
           </div>
-        ) : null}
-      </section>
+        </section>
 
-      {/* Users */}
-      <section>
-        <h4>All Users</h4>
-
-        <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
-            <thead>
-              <tr>
-                <th style={th}>ID</th>
-                <th style={th}>Username</th>
-                <th style={th}>Role</th>
-                <th style={th}>Complex</th>
-                <th style={th}>Active</th>
-                <th style={th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {safeUsers.map(u => (
-                <tr key={u.id}>
-                  <td style={td}>{u.id}</td>
-                  <td style={td}>{u.username}</td>
-                  <td style={td}>{ROLE_LABEL[u.role] || u.role}</td>
-                  <td style={td}>{u.complex_id ?? "—"}</td>
-                  <td style={td}>{u.active ? "Yes" : "No"}</td>
-                  <td style={{ ...td, whiteSpace:"nowrap" }}>
-                    {u.role !== "owner" ? (
-                      <>
-                        <button style={btnTiny} onClick={()=>resetPasswordFor(u)}>Reset PW</button>
-                        <button style={btnTiny} onClick={()=>toggleActiveFor(u)}>{u.active ? "Disable" : "Enable"}</button>
-                        <button style={btnTinyDanger} onClick={()=>deleteUser(u)}>Delete</button>
-                      </>
-                    ) : <span style={{ color:"#6b7280" }}>—</span>}
-                  </td>
-                </tr>
+        <section style={{ marginBottom:16 }}>
+          <h4>Invite Supervisor / Employee</h4>
+          <div style={gridAdmin}>
+            <input
+              style={input}
+              placeholder="Username"
+              value={ownerInvite?.username || ""}
+              onChange={e=>setOwnerInvite(v=>({ ...(v||{}), username:e.target.value }))}
+            />
+            <select
+              style={input}
+              value={ownerInvite?.role || "manager"}
+              onChange={e=>setOwnerInvite(v=>({ ...(v||{}), role:e.target.value }))}
+            >
+              <option value="manager">Supervisor</option>
+              <option value="worker">Employee</option>
+            </select>
+            <select
+              style={input}
+              value={String(ownerInvite?.complex_id || "")}
+              onChange={e=>setOwnerInvite(v=>({ ...(v||{}), complex_id:e.target.value }))}
+              disabled={safeComplexes.length===0}
+            >
+              {safeComplexes.map(c => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
               ))}
-              {safeUsers.length === 0 && (
-                <tr><td style={td} colSpan="6">No users yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            </select>
+            <button
+              style={btnSmall}
+              onClick={ownerInviteUser}
+              disabled={safeComplexes.length===0}
+            >
+              Create Invite
+            </button>
+          </div>
 
-        <div style={{ marginTop:8, display:"flex", gap:8 }}>
-          <button
-            style={btnSmall}
-            onClick={()=>{ fetchComplexes(); fetchUsers(); }}
-            disabled={loading}
-          >
-            {loading ? "Refreshing..." : "Refresh Lists"}
-          </button>
-        </div>
-      </section>
-    </Card>
-  );
-}
+          {lastInviteLink ? (
+            <div style={{ marginTop:8 }}>
+              <b>Invite link:</b>{" "}
+              <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
+              <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
+            </div>
+          ) : null}
+        </section>
 
+        <section>
+          <h4>All Users</h4>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>ID</th>
+                  <th style={th}>Username</th>
+                  <th style={th}>Role</th>
+                  <th style={th}>Complex</th>
+                  <th style={th}>Active</th>
+                  <th style={th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {safeUsers.map(u => (
+                  <tr key={u.id}>
+                    <td style={td}>{u.id}</td>
+                    <td style={td}>{u.username}</td>
+                    <td style={td}>{ROLE_LABEL[u.role] || u.role}</td>
+                    <td style={td}>{u.complex_id ?? "—"}</td>
+                    <td style={td}>{u.active ? "Yes" : "No"}</td>
+                    <td style={{ ...td, whiteSpace:"nowrap" }}>
+                      {u.role !== "owner" ? (
+                        <>
+                          <button style={btnTiny} onClick={()=>resetPasswordFor(u)}>Reset PW</button>
+                          <button style={btnTiny} onClick={()=>toggleActiveFor(u)}>{u.active ? "Disable" : "Enable"}</button>
+                          <button style={btnTinyDanger} onClick={()=>deleteUser(u)}>Delete</button>
+                        </>
+                      ) : <span style={{ color:"#6b7280" }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {safeUsers.length === 0 && (
+                  <tr><td style={td} colSpan="6">No users yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop:8, display:"flex", gap:8 }}>
+            <button
+              style={btnSmall}
+              onClick={()=>{ fetchComplexes(); fetchUsers(); }}
+              disabled={loading}
+            >
+              {loading ? "Refreshing..." : "Refresh Lists"}
+            </button>
+          </div>
+        </section>
+      </Card>
+    );
+  }
 
   function SupervisorAdmin(props) {
     const {
@@ -794,7 +785,7 @@ function OwnerAdmin(props) {
     );
   }
 
-  /** ----- Admin helpers used above ----- */
+  /** ----- Admin helpers ----- */
   const createComplex = async () => {
     const name = (newComplexName || "").trim();
     if (!name) return;
@@ -808,7 +799,7 @@ function OwnerAdmin(props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Create complex failed (${res.status})`);
       setNewComplexName("");
-      await fetchComplexes(); // refresh list
+      await fetchComplexes();
     } catch (e) {
       setError(e.message || "Failed to create complex");
     } finally {
@@ -826,7 +817,7 @@ function OwnerAdmin(props) {
         method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" },
         body: JSON.stringify({
           username: u,
-          role: ownerInvite.role,                // "manager" or "worker"
+          role: ownerInvite.role, // "manager" or "worker"
           complex_id: Number(ownerInvite.complex_id)
         })
       });
@@ -988,7 +979,6 @@ function RequestList({
               {r.notes && <div style={{ color:"#555", marginTop:4 }}>Notes: {r.notes}</div>}
             </div>
 
-            {/* Buttons */}
             {!isHistory && (
               <div style={btnGroup}>
                 {role === "manager" && (
@@ -1029,7 +1019,6 @@ function RequestList({
                   </>
                 )}
 
-                {/* Complete for EVERY role */}
                 <button style={btnTiny} onClick={()=>onComplete?.(r.id)}>{ICON.complete} Complete</button>
               </div>
             )}
