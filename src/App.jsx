@@ -66,6 +66,7 @@ export default function App() {
   // Auth
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [role, setRole] = useState(() => localStorage.getItem("role") || "");
+  const [authChecked, setAuthChecked] = useState(false); // <<< baked-in auth gate
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
   const [loginRole, setLoginRole] = useState("worker"); // owner|manager|worker
   const [me, setMe] = useState(null);
@@ -104,13 +105,23 @@ export default function App() {
 
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
+  // --- Baked-in auth checker: verifies token before showing any dashboard ---
   const fetchMe = async (tkn = token) => {
-    if (!tkn) return;
+    if (!tkn) { setAuthChecked(true); return; }
     try {
       const res = await fetch(`${API_URL}/me`, { headers: { ...authHeaders, Authorization: `Bearer ${tkn}` } });
-      const data = await res.json().catch(()=>null);
-      if (res.ok && data) setMe(data); else setMe(null);
-    } catch { setMe(null); }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) setMe(data);
+      else {
+        setMe(null); setToken(""); setRole("");
+        localStorage.removeItem("token"); localStorage.removeItem("role");
+      }
+    } catch {
+      setMe(null); setToken(""); setRole("");
+      localStorage.removeItem("token"); localStorage.removeItem("role");
+    } finally {
+      setAuthChecked(true);
+    }
   };
 
   const login = async (e) => {
@@ -133,12 +144,15 @@ export default function App() {
 
   const logout = () => {
     setToken(""); setRole(""); setMe(null);
+    localStorage.removeItem("token"); localStorage.removeItem("role");
     setRequests([]); setOwnerInbox([]); setUsers([]); setComplexes([]);
     setError(""); setOwnerTab("inbox");
+    setAuthChecked(true); // go back to login immediately
   };
 
   const preload = async (tkn, r) => {
     await fetchMe(tkn);
+    if (!tkn) return;
     if (r === "owner") {
       await Promise.all([fetchOwnerInbox(tkn), fetchRequests(tkn), fetchComplexes(tkn), fetchUsers(tkn)]);
     } else if (r === "manager") {
@@ -175,7 +189,6 @@ export default function App() {
       const data = await res.json().catch(()=>[]);
       const arr = Array.isArray(data) ? data : [];
       setComplexes(arr);
-      // set default complex id safely
       if (arr.length && !ownerInvite.complex_id) {
         setOwnerInvite((v) => ({ ...v, complex_id: String(arr[0].id) }));
       }
@@ -194,8 +207,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!token) return;
-    preload(token, role);
+    // On load and whenever token/role changes, verify auth and preload
+    (async () => { await preload(token, role); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, role]);
 
@@ -381,6 +394,12 @@ export default function App() {
   };
 
   /** ---------- Views ---------- */
+
+  // Show a neutral loading screen until we verify any stored token
+  if (!authChecked) {
+    return <div style={{ padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>Loading…</div>;
+  }
+
   if (!token) {
     return (
       <ErrorBoundary>
