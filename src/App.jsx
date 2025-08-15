@@ -57,6 +57,26 @@ export default function App() {
     <ErrorBoundary>
       <AcceptInvite token={inviteToken} />
     </ErrorBoundary>
+ // Create a new apartment complex (Owner only)
+const createComplex = async () => {
+  const name = (newComplexName || "").trim();
+  if (!name) return;
+  setError(""); setLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/complexes`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Create complex failed (${res.status})`);
+    setNewComplexName("");
+    await fetchComplexes(); // refresh list
+  } catch (e) {
+    setError(e.message || "Failed to create complex");
+  } finally {
+    setLoading(false);
+  } 
   );
 
   // Auth
