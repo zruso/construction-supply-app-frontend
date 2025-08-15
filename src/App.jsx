@@ -1,3 +1,5 @@
+/* FULL App.jsx with StatusBadge & OwnerBadge defined */
+
 import React, { useEffect, useState } from "react";
 
 /** Config */
@@ -43,6 +45,39 @@ class ErrorBoundary extends React.Component {
     }
     return this.props.children;
   }
+}
+
+/** Badges that were missing before */
+function StatusBadge({ status }) {
+  const s = String(status || "").toLowerCase();
+  const map = {
+    pending:   { bg:"#FEF3C7", fg:"#92400E", label:"Pending" },
+    approved:  { bg:"#D1FAE5", fg:"#065F46", label:"Approved" },
+    ordered:   { bg:"#DBEAFE", fg:"#1E40AF", label:"Ordered" },
+    delivered: { bg:"#E9D5FF", fg:"#5B21B6", label:"Delivered" },
+    rejected:  { bg:"#FECACA", fg:"#7F1D1D", label:"Rejected" },
+    canceled:  { bg:"#E5E7EB", fg:"#111827", label:"Canceled" }
+  };
+  const sty = map[s] || { bg:"#E5E7EB", fg:"#111827", label:s || "—" };
+  return <span style={{
+    background: sty.bg, color: sty.fg, padding:"2px 8px", borderRadius:999,
+    fontSize:12, marginRight:6
+  }}>{sty.label}</span>;
+}
+
+function OwnerBadge({ ownerStatus }) {
+  const s = String(ownerStatus || "").toLowerCase();
+  const map = {
+    none:     { bg:"#F3F4F6", fg:"#374151", label:"No Owner Review" },
+    pending:  { bg:"#FEF3C7", fg:"#92400E", label:"Owner Pending" },
+    approved: { bg:"#D1FAE5", fg:"#065F46", label:"Owner Approved" },
+    rejected: { bg:"#FECACA", fg:"#7F1D1D", label:"Owner Rejected" }
+  };
+  const sty = map[s] || map.none;
+  return <span style={{
+    background: sty.bg, color: sty.fg, padding:"2px 8px", borderRadius:999,
+    fontSize:12, marginRight:6
+  }}>{sty.label}</span>;
 }
 
 /** App */
@@ -587,7 +622,7 @@ export default function App() {
     </ErrorBoundary>
   );
 
-  /** ----- Owner Admin panel (extracted to keep main tidy) ----- */
+  /** ----- Owner Admin panel (same as before) ----- */
   function OwnerAdmin(props) {
     const {
       newComplexName, setNewComplexName, createComplex, complexes,
