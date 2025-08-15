@@ -18,7 +18,8 @@ const ICON = {
   photo: "\uD83D\uDCF7",
   escalate: "\uD83D\uDD3C",
   complete: "\u2705",
-  restore: "\u21BA"
+  restore: "\u21BA",
+  del: "\uD83D\uDDD1\uFE0F"
 };
 
 /** Error Boundary */
@@ -57,26 +58,6 @@ export default function App() {
     <ErrorBoundary>
       <AcceptInvite token={inviteToken} />
     </ErrorBoundary>
- // Create a new apartment complex (Owner only)
-const createComplex = async () => {
-  const name = (newComplexName || "").trim();
-  if (!name) return;
-  setError(""); setLoading(true);
-  try {
-    const res = await fetch(`${API_URL}/complexes`, {
-      method: "POST",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Create complex failed (${res.status})`);
-    setNewComplexName("");
-    await fetchComplexes(); // refresh list
-  } catch (e) {
-    setError(e.message || "Failed to create complex");
-  } finally {
-    setLoading(false);
-  } 
   );
 
   // Auth
@@ -218,7 +199,7 @@ const createComplex = async () => {
   const fetchUsers = async (tkn = token) => {
     try {
       const res = await fetch(`${API_URL}/users`, { headers: { ...authHeaders, Authorization:`Bearer ${tkn}` }});
-    const data = await res.json().catch(()=>[]);
+      const data = await res.json().catch(()=>[]);
       setUsers(Array.isArray(data) ? data : []);
       if (!res.ok) throw new Error(data?.error || `Failed to load users (${res.status})`);
     } catch (e) { console.error(e); setError(e.message || "Failed to load users"); setUsers([]); }
@@ -311,7 +292,7 @@ const createComplex = async () => {
     finally { setLoading(false); }
   };
 
-  /** NEW: Complete & Restore */
+  /** Complete / Restore / Delete / Clear History */
   const completeRequest = async (id) => {
     setError(""); setLoading(true);
     try {
@@ -330,6 +311,28 @@ const createComplex = async () => {
       if (!res.ok) throw new Error(data?.error || `Restore failed (${res.status})`);
       await Promise.all([fetchActive(), fetchHistory()]);
     } catch (e) { setError(e.message || "Failed to restore request"); }
+    finally { setLoading(false); }
+  };
+  const deleteArchived = async (id) => {
+    if (!window.confirm("Delete this completed request permanently? This cannot be undone.")) return;
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/requests/${id}`, { method:"DELETE", headers: { ...authHeaders }});
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Delete failed (${res.status})`);
+      await fetchHistory();
+    } catch (e) { setError(e.message || "Failed to delete request"); }
+    finally { setLoading(false); }
+  };
+  const clearHistory = async () => {
+    if (!window.confirm("Clear ALL completed requests in your scope? This cannot be undone.")) return;
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/requests/history`, { method:"DELETE", headers: { ...authHeaders }});
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Clear history failed (${res.status})`);
+      await fetchHistory();
+    } catch (e) { setError(e.message || "Failed to clear history"); }
     finally { setLoading(false); }
   };
 
@@ -386,18 +389,21 @@ const createComplex = async () => {
                   <button style={tab(ownerTab==="history")} onClick={()=>{ setOwnerTab("history"); fetchHistory(); }}>History</button>
                   <button style={tab(ownerTab==="admin")} onClick={()=>{ setOwnerTab("admin"); fetchComplexes(); fetchUsers(); }}>Admin</button>
                 </div>
-                <button
-                  style={btnSmall}
-                  onClick={()=>{ 
-                    if (ownerTab==="inbox") fetchOwnerInbox();
-                    if (ownerTab==="all") fetchActive();
-                    if (ownerTab==="history") fetchHistory();
-                    if (ownerTab==="admin") { fetchComplexes(); fetchUsers(); }
-                  }}
-                  disabled={loading}
-                >
-                  {loading ? "Loading..." : "Refresh"}
-                </button>
+                <div style={{ display:"flex", gap:8 }}>
+                  {ownerTab === "history" && <button style={btnSmall} onClick={clearHistory}>{ICON.del} Clear History</button>}
+                  <button
+                    style={btnSmall}
+                    onClick={()=>{
+                      if (ownerTab==="inbox") fetchOwnerInbox();
+                      if (ownerTab==="all") fetchActive();
+                      if (ownerTab==="history") fetchHistory();
+                      if (ownerTab==="admin") { fetchComplexes(); fetchUsers(); }
+                    }}
+                    disabled={loading}
+                  >
+                    {loading ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
               </div>
             </Card>
 
@@ -432,60 +438,31 @@ const createComplex = async () => {
                 requests={history}
                 isHistory={true}
                 onRefresh={fetchHistory}
-                onComplete={()=>{}}
                 onRestore={restoreRequest}
+                onDelete={deleteArchived}
+                onClearHistory={clearHistory}
               />
             )}
 
             {ownerTab === "admin" && (
-              <Card>
-                <h3>Owner Admin</h3>
-
-                <section style={{ marginBottom:16 }}>
-                  <h4>Create Complex</h4>
-                  <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
-                    <input style={input} placeholder="Complex name" value={newComplexName} onChange={e=>setNewComplexName(e.target.value)} />
-                    <button style={btnSmall} onClick={createComplex}>Add Complex</button>
-                  </div>
-                </section>
-
-                <section style={{ marginBottom:16 }}>
-                  <h4>Invite Supervisor / Employee</h4>
-                  <div style={gridAdmin}>
-                    <input style={input} placeholder="Username" value={ownerInvite.username} onChange={e=>setOwnerInvite(v=>({ ...v, username:e.target.value }))} />
-                    <select style={input} value={ownerInvite.role} onChange={e=>setOwnerInvite(v=>({ ...v, role:e.target.value }))}>
-                      <option value="manager">Supervisor</option>
-                      <option value="worker">Employee</option>
-                    </select>
-                    <select
-                      style={input}
-                      value={ownerInvite.complex_id}
-                      onChange={e=>setOwnerInvite(v=>({ ...v, complex_id:e.target.value }))}
-                      disabled={!Array.isArray(complexes) || complexes.length===0}
-                    >
-                      {Array.isArray(complexes) && complexes.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                    </select>
-                    <button style={btnSmall} onClick={ownerInviteUser} disabled={!Array.isArray(complexes) || complexes.length===0}>Create Invite</button>
-                  </div>
-                  {lastInviteLink && (
-                    <div style={{ marginTop:8 }}>
-                      <b>Invite link:</b> <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
-                      <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
-                    </div>
-                  )}
-                </section>
-
-                <section>
-                  <h4>All Users</h4>
-                  <UserTable
-                    users={users}
-                    canManage={(u)=>u && u.role !== "owner"}
-                    onReset={resetPasswordFor}
-                    onToggle={toggleActiveFor}
-                    onDelete={deleteUser}
-                  />
-                </section>
-              </Card>
+              <OwnerAdmin
+                newComplexName={newComplexName}
+                setNewComplexName={setNewComplexName}
+                createComplex={createComplex}
+                complexes={complexes}
+                ownerInvite={ownerInvite}
+                setOwnerInvite={setOwnerInvite}
+                lastInviteLink={lastInviteLink}
+                setLastInviteLink={setLastInviteLink}
+                fetchComplexes={fetchComplexes}
+                fetchUsers={fetchUsers}
+                ownerInviteUser={ownerInviteUser}
+                users={users}
+                resetPasswordFor={resetPasswordFor}
+                toggleActiveFor={toggleActiveFor}
+                deleteUser={deleteUser}
+                loading={loading}
+              />
             )}
           </>
         )}
@@ -500,6 +477,7 @@ const createComplex = async () => {
                   <button style={tab(managerTab==="active")} onClick={()=>{ setManagerTab("active"); fetchActive(); }}>Active</button>
                   <button style={tab(managerTab==="history")} onClick={()=>{ setManagerTab("history"); fetchHistory(); }}>History</button>
                 </div>
+                {managerTab === "history" && <button style={btnSmall} onClick={clearHistory}>{ICON.del} Clear History</button>}
               </div>
             </Card>
 
@@ -523,38 +501,25 @@ const createComplex = async () => {
                 requests={history}
                 isHistory={true}
                 onRefresh={fetchHistory}
-                onComplete={()=>{}}
                 onRestore={restoreRequest}
+                onDelete={deleteArchived}
+                onClearHistory={clearHistory}
               />
             )}
 
-            <Card>
-              <h3>Supervisor Admin — Invite Employee</h3>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8, marginBottom:6 }}>
-                <input style={input} placeholder="Employee username" value={superInvite.username} onChange={e=>setSuperInvite({ username:e.target.value })} />
-                <button style={btnSmall} onClick={supervisorInviteEmployee}>Create Invite</button>
-              </div>
-              {lastInviteLink && (
-                <div style={{ marginBottom:8 }}>
-                  <b>Invite link:</b> <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
-                  <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
-                </div>
-              )}
-              <button style={btnSmall} onClick={()=>{ fetchUsers(); }} disabled={loading}>
-                {loading ? "Refreshing..." : "Refresh People List"}
-              </button>
-
-              <div style={{ marginTop:12 }}>
-                <h4>People in Your Complex</h4>
-                <UserTable
-                  users={users}
-                  canManage={(u)=>u && u.role === "worker"}
-                  onReset={resetPasswordFor}
-                  onToggle={toggleActiveFor}
-                  onDelete={deleteUser}
-                />
-              </div>
-            </Card>
+            <SupervisorAdmin
+              superInvite={superInvite}
+              setSuperInvite={setSuperInvite}
+              supervisorInviteEmployee={supervisorInviteEmployee}
+              lastInviteLink={lastInviteLink}
+              setLastInviteLink={setLastInviteLink}
+              fetchUsers={fetchUsers}
+              users={users}
+              resetPasswordFor={resetPasswordFor}
+              toggleActiveFor={toggleActiveFor}
+              deleteUser={deleteUser}
+              loading={loading}
+            />
           </>
         )}
 
@@ -568,6 +533,7 @@ const createComplex = async () => {
                   <button style={tab(workerTab==="active")} onClick={()=>{ setWorkerTab("active"); fetchActive(); }}>Active</button>
                   <button style={tab(workerTab==="history")} onClick={()=>{ setWorkerTab("history"); fetchHistory(); }}>History</button>
                 </div>
+                {workerTab === "history" && <button style={btnSmall} onClick={clearHistory}>{ICON.del} Clear History</button>}
               </div>
             </Card>
 
@@ -611,6 +577,8 @@ const createComplex = async () => {
                 isHistory={true}
                 onRefresh={fetchHistory}
                 onRestore={restoreRequest}
+                onDelete={deleteArchived}
+                onClearHistory={clearHistory}
               />
             )}
           </>
@@ -618,6 +586,211 @@ const createComplex = async () => {
       </div>
     </ErrorBoundary>
   );
+
+  /** ----- Owner Admin panel (extracted to keep main tidy) ----- */
+  function OwnerAdmin(props) {
+    const {
+      newComplexName, setNewComplexName, createComplex, complexes,
+      ownerInvite, setOwnerInvite, lastInviteLink, setLastInviteLink,
+      fetchComplexes, fetchUsers, ownerInviteUser, users,
+      resetPasswordFor, toggleActiveFor, deleteUser, loading
+    } = props;
+
+    return (
+      <Card>
+        <h3>Owner Admin</h3>
+
+        <section style={{ marginBottom:16 }}>
+          <h4>Create Complex</h4>
+          <div style={{ display:"grid", gridTemplateColumns:"2fr auto", gap:8 }}>
+            <input style={input} placeholder="Complex name" value={newComplexName} onChange={e=>setNewComplexName(e.target.value)} />
+            <button style={btnSmall} onClick={createComplex}>Add Complex</button>
+          </div>
+        </section>
+
+        <section style={{ marginBottom:16 }}>
+          <h4>Invite Supervisor / Employee</h4>
+          <div style={gridAdmin}>
+            <input style={input} placeholder="Username" value={ownerInvite.username} onChange={e=>setOwnerInvite(v=>({ ...v, username:e.target.value }))} />
+            <select style={input} value={ownerInvite.role} onChange={e=>setOwnerInvite(v=>({ ...v, role:e.target.value }))}>
+              <option value="manager">Supervisor</option>
+              <option value="worker">Employee</option>
+            </select>
+            <select
+              style={input}
+              value={ownerInvite.complex_id}
+              onChange={e=>setOwnerInvite(v=>({ ...v, complex_id:e.target.value }))}
+              disabled={!Array.isArray(complexes) || complexes.length===0}
+            >
+              {Array.isArray(complexes) && complexes.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+            </select>
+            <button style={btnSmall} onClick={ownerInviteUser} disabled={!Array.isArray(complexes) || complexes.length===0}>Create Invite</button>
+          </div>
+          {lastInviteLink && (
+            <div style={{ marginTop:8 }}>
+              <b>Invite link:</b> <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
+              <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h4>All Users</h4>
+          <UserTable
+            users={users}
+            canManage={(u)=>u && u.role !== "owner"}
+            onReset={resetPasswordFor}
+            onToggle={toggleActiveFor}
+            onDelete={deleteUser}
+          />
+          <div style={{ marginTop:8 }}>
+            <button style={btnSmall} onClick={()=>{ fetchComplexes(); fetchUsers(); }} disabled={loading}>
+              {loading ? "Refreshing..." : "Refresh Lists"}
+            </button>
+          </div>
+        </section>
+      </Card>
+    );
+  }
+
+  function SupervisorAdmin(props) {
+    const {
+      superInvite, setSuperInvite, supervisorInviteEmployee,
+      lastInviteLink, setLastInviteLink, fetchUsers, users,
+      resetPasswordFor, toggleActiveFor, deleteUser, loading
+    } = props;
+
+    return (
+      <Card>
+        <h3>Supervisor Admin — Invite Employee</h3>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8, marginBottom:6 }}>
+          <input style={input} placeholder="Employee username" value={superInvite.username} onChange={e=>setSuperInvite({ username:e.target.value })} />
+          <button style={btnSmall} onClick={supervisorInviteEmployee}>Create Invite</button>
+        </div>
+        {lastInviteLink && (
+          <div style={{ marginBottom:8 }}>
+            <b>Invite link:</b> <span style={{ wordBreak:"break-all" }}>{lastInviteLink}</span>
+            <button style={{ ...btnTiny, marginLeft:8 }} onClick={()=>copy(lastInviteLink)}>Copy</button>
+          </div>
+        )}
+        <button style={btnSmall} onClick={()=>{ fetchUsers(); }} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh People List"}
+        </button>
+
+        <div style={{ marginTop:12 }}>
+          <h4>People in Your Complex</h4>
+          <UserTable
+            users={users}
+            canManage={(u)=>u && u.role === "worker"}
+            onReset={resetPasswordFor}
+            onToggle={toggleActiveFor}
+            onDelete={deleteUser}
+          />
+        </div>
+      </Card>
+    );
+  }
+
+  /** ----- Admin helpers used above ----- */
+  const createComplex = async () => {
+    const name = (newComplexName || "").trim();
+    if (!name) return;
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/complexes`, {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Create complex failed (${res.status})`);
+      setNewComplexName("");
+      await fetchComplexes(); // refresh list
+    } catch (e) {
+      setError(e.message || "Failed to create complex");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ownerInviteUser = async () => {
+    const u = (ownerInvite.username || "").trim();
+    if (!u) return; if (!ownerInvite.role) return;
+    if (!ownerInvite.complex_id) { setError("Pick a complex"); return; }
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/invites`, {
+        method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" },
+        body: JSON.stringify({
+          username: u,
+          role: ownerInvite.role,                // "manager" or "worker"
+          complex_id: Number(ownerInvite.complex_id)
+        })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Invite failed (${res.status})`);
+      setOwnerInvite({ username:"", role:"manager", complex_id: complexes[0] ? String(complexes[0].id) : "" });
+      const link = buildInviteLink(data.invite_token);
+      setLastInviteLink(link); await fetchUsers();
+    } catch (e) { setError(e.message || "Failed to create invite"); }
+    finally { setLoading(false); }
+  };
+
+  const supervisorInviteEmployee = async () => {
+    const u = (superInvite.username || "").trim(); if (!u) return;
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/invites`, {
+        method:"POST", headers:{ ...authHeaders, "Content-Type":"application/json" },
+        body: JSON.stringify({ username: u })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Invite failed (${res.status})`);
+      setSuperInvite({ username:"" });
+      const link = buildInviteLink(data.invite_token);
+      setLastInviteLink(link); await fetchUsers();
+    } catch (e) { setError(e.message || "Failed to create invite"); }
+    finally { setLoading(false); }
+  };
+
+  const resetPasswordFor = async (u) => {
+    const npw = window.prompt(`Enter a new password for ${u.username}:`);
+    if (!npw) return; setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/users/${u.id}/password`, {
+        method:"PATCH", headers:{ ...authHeaders, "Content-Type":"application/json" },
+        body: JSON.stringify({ new_password: npw })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Reset failed (${res.status})`);
+      await fetchUsers();
+    } catch (e) { setError(e.message || "Failed to reset password"); }
+    finally { setLoading(false); }
+  };
+
+  const toggleActiveFor = async (u) => {
+    setError(""); setLoading(true);
+    try {
+      const ep = u.active ? "disable" : "enable";
+      const res = await fetch(`${API_URL}/users/${u.id}/${ep}`, { method:"PATCH", headers:{ ...authHeaders } });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Update failed (${res.status})`);
+      await fetchUsers();
+    } catch (e) { setError(e.message || "Failed to update account status"); }
+    finally { setLoading(false); }
+  };
+
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Delete ${u.username}? This cannot be undone.`)) return;
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/users/${u.id}`, { method:"DELETE", headers:{ ...authHeaders } });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data?.error || `Delete failed (${res.status})`);
+      await fetchUsers();
+    } catch (e) { setError(e.message || "Failed to delete user"); }
+    finally { setLoading(false); }
+  };
 }
 
 /** Accept Invite */
@@ -678,14 +851,17 @@ function AcceptInvite({ token }) {
 function RequestList({
   title, role, requests, isHistory=false,
   onRefresh, onUpdateStatus, onEscalate, onStartEdit, onCancelEdit, onSaveEdit,
-  editingId, editForm, setEditForm, onUploadPhoto, onComplete, onRestore
+  editingId, editForm, setEditForm, onUploadPhoto, onComplete, onRestore, onDelete, onClearHistory
 }) {
   const list = Array.isArray(requests) ? requests : [];
   return (
     <Card>
       <div style={rowBetween}>
         <h3>{title}</h3>
-        <button style={btnSmall} onClick={()=>onRefresh()}>Refresh</button>
+        <div style={{ display:"flex", gap:8 }}>
+          {isHistory && onClearHistory && <button style={btnSmall} onClick={onClearHistory}>{ICON.del} Clear History</button>}
+          <button style={btnSmall} onClick={()=>onRefresh()}>Refresh</button>
+        </div>
       </div>
 
       {list.length === 0 && <div style={{ color:"#666" }}>{isHistory ? "No completed items yet." : "No requests yet."}</div>}
@@ -758,6 +934,7 @@ function RequestList({
             {isHistory && (
               <div style={btnGroup}>
                 <button style={btnTiny} onClick={()=>onRestore?.(r.id)}>{ICON.restore} Restore</button>
+                {onDelete && <button style={btnTinyDanger} onClick={()=>onDelete(r.id)}>{ICON.del} Delete</button>}
               </div>
             )}
           </div>
@@ -846,32 +1023,6 @@ function UserTable({ users, canManage, onReset, onToggle, onDelete }) {
       </table>
     </div>
   );
-}
-
-/** Badges & Styles */
-function StatusBadge({ status }) {
-  const s = String(status || "").toLowerCase();
-  const map = {
-    pending:  { bg:"#FEF3C7", fg:"#92400E", label:"Pending" },
-    approved: { bg:"#DCFCE7", fg:"#166534", label:`${ICON.approve} Approved` },
-    ordered:  { bg:"#DBEAFE", fg:"#1E40AF", label:`${ICON.ordered} Ordered` },
-    delivered:{ bg:"#E0E7FF", fg:"#3730A3", label:`${ICON.delivered} Delivered` },
-    rejected: { bg:"#FEE2E2", fg:"#991B1B", label:`${ICON.reject} Rejected` },
-    canceled: { bg:"#F3F4F6", fg:"#374151", label:"Canceled" }
-  };
-  const c = map[s] || map.pending;
-  return <span style={{ background:c.bg, color:c.fg, padding:"2px 8px", borderRadius:999, fontSize:12 }}>{c.label}</span>;
-}
-function OwnerBadge({ ownerStatus }) {
-  const s = String(ownerStatus || "").toLowerCase();
-  const map = {
-    none:     { bg:"#F3F4F6", fg:"#374151", label:"Owner: None" },
-    pending:  { bg:"#FEF3C7", fg:"#92400E", label:"Owner: Pending" },
-    approved: { bg:"#DCFCE7", fg:"#166534", label:`Owner: ${ICON.approve} Approved` },
-    rejected: { bg:"#FEE2E2", fg:"#991B1B", label:`Owner: ${ICON.reject} Rejected` }
-  };
-  const c = map[s] || map.none;
-  return <span style={{ background:c.bg, color:c.fg, padding:"2px 8px", borderRadius:999, fontSize:12, marginLeft:8 }}>{c.label}</span>;
 }
 
 /** Utils & Styles */
